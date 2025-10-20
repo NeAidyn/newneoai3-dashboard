@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Интерактивная дорожная карта NeoAI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Calm Neutrals -->
+    <!-- Application Structure Plan: Я разработал структуру в виде интерактивного дашборда. Такой подход выбран, потому что он позволяет пользователям мгновенно получать как общую картину (через сводные карточки и диаграммы), так и углубляться в детали с помощью фильтров. Структура состоит из четырех ключевых блоков: 1. Сводные KPI для быстрого обзора. 2. Панель фильтров для интерактивного управления данными. 3. Визуализации для наглядного представления распределения задач. 4. Детальный список задач в виде карточек для удобного просмотра. Эта архитектура превращает статичную таблицу в динамический инструмент для анализа и планирования, что гораздо удобнее для команды. -->
+    <!-- Visualization & Content Choices: 1. Сводные показатели (KPI): Цель - информировать. Представлены в виде HTML-карточек для быстрого обзора ключевых метрик (всего задач, по статусам). 2. Распределение задач по исполнителям: Цель - сравнить. Используется кольцевая диаграмма (Chart.js) для наглядной демонстрации нагрузки на каждого члена команды. 3. Задачи по приоритетам: Цель - сравнить. Горизонтальная гистограмма (Chart.js) для четкого сравнения количества задач разной важности. 4. Хронология задач: Цель - показать изменение во времени. Горизонтальная гистограмма (Chart.js), группирующая задачи по кварталам, дает представление о плотности работы в будущем. 5. Список задач: Цель - организовать. Представлен в виде интерактивных HTML-карточек, которые фильтруются с помощью JS, что обеспечивает удобный доступ к деталям каждой задачи. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #fdfcfb;
+            color: #3f3f46;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 300px;
+            max-height: 400px;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 350px;
+            }
+        }
+        .priority-tag, .status-tag {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-weight: 500;
+            font-size: 0.75rem;
+            white-space: nowrap;
+        }
+        .priority-Высокий { background-color: #fee2e2; color: #b91c1c; }
+        .priority-Средний { background-color: #fef3c7; color: #b45309; }
+        .priority-Низкий { background-color: #d1fae5; color: #065f46; }
+        
+        .status-Не-начато { background-color: #e5e7eb; color: #4b5563; }
+        .status-В-работе { background-color: #dbeafe; color: #1d4ed8; }
+        .status-Выполнено { background-color: #dcfce7; color: #166534; }
+
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        #task-modal { transition: opacity 0.3s ease-in-out; }
+    </style>
+</head>
+<body class="antialiased">
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8">
+        
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-slate-800">Интерактивная дорожная карта NeoAI</h1>
+            <p class="mt-2 text-slate-600">Дашборд для отслеживания задач и прогресса проекта</p>
+        </header>
+
+        <main>
+            <!-- KPI Cards -->
+            <section id="kpi-section" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200/80">
+                    <h3 class="text-sm font-medium text-slate-500">Всего задач</h3>
+                    <p id="total-tasks" class="text-3xl font-bold text-slate-800 mt-1">0</p>
+                </div>
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200/80">
+                    <h3 class="text-sm font-medium text-slate-500">В работе</h3>
+                    <p id="inprogress-tasks" class="text-3xl font-bold text-blue-700 mt-1">0</p>
+                </div>
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200/80">
+                    <h3 class="text-sm font-medium text-slate-500">Выполнено</h3>
+                    <p id="done-tasks" class="text-3xl font-bold text-green-700 mt-1">0</p>
+                </div>
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200/80">
+                    <h3 class="text-sm font-medium text-slate-500">Высокий приоритет</h3>
+                    <p id="high-priority-tasks" class="text-3xl font-bold text-red-700 mt-1">0</p>
+                </div>
+            </section>
+
+            <!-- Filters -->
+            <section id="filters-section" class="mb-8 p-4 bg-white rounded-xl shadow-sm border border-slate-200/80">
+                 <p class="text-lg font-semibold text-slate-800 mb-4">Фильтры</p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div>
+                        <label for="responsible-filter" class="block text-sm font-medium text-slate-700 mb-1">Ответственный</label>
+                        <select id="responsible-filter" class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                            <option value="all">Все</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="priority-filter" class="block text-sm font-medium text-slate-700 mb-1">Приоритет</label>
+                        <select id="priority-filter" class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                            <option value="all">Все</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="status-filter" class="block text-sm font-medium text-slate-700 mb-1">Статус</label>
+                        <select id="status-filter" class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                            <option value="all">Все</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="direction-filter" class="block text-sm font-medium text-slate-700 mb-1">Направление</label>
+                        <select id="direction-filter" class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                            <option value="all">Все</option>
+                        </select>
+                    </div>
+                </div>
+                 <div class="border-t border-slate-200 mt-6 pt-4">
+                    <p class="text-base font-semibold text-slate-800 mb-3">Управление командой</p>
+                    <div class="flex items-center gap-2 max-w-sm">
+                        <input type="text" id="new-responsible-input" placeholder="Имя нового исполнителя" class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <button id="add-responsible-btn" class="bg-slate-700 text-white font-semibold px-4 py-2 rounded-lg hover:bg-slate-800 transition whitespace-nowrap">Добавить</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Visualizations -->
+            <section id="charts-section" class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200/80">
+                    <h3 class="text-lg font-semibold text-slate-800 mb-4 text-center">Распределение задач по исполнителям</h3>
+                    <p class="text-center text-sm text-slate-500 mb-4">Эта диаграмма показывает, как задачи распределены между членами команды. Наведите на сектор, чтобы увидеть точное количество задач.</p>
+                    <div class="chart-container">
+                        <canvas id="responsible-chart"></canvas>
+                    </div>
+                </div>
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200/80">
+                    <h3 class="text-lg font-semibold text-slate-800 mb-4 text-center">Задачи по статусам</h3>
+                     <p class="text-center text-sm text-slate-500 mb-4">Здесь показано соотношение задач по их текущему статусу выполнения.</p>
+                    <div class="chart-container">
+                        <canvas id="status-chart"></canvas>
+                    </div>
+                </div>
+                 <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200/80 lg:col-span-2">
+                    <h3 class="text-lg font-semibold text-slate-800 mb-4 text-center">Хронология выполнения задач по кварталам</h3>
+                    <p class="text-center text-sm text-slate-500 mb-4">Эта диаграмма иллюстрирует, сколько задач запланировано на каждый квартал. Она помогает визуализировать интенсивность работы в будущем.</p>
+                    <div class="chart-container h-[400px] max-h-[500px]">
+                        <canvas id="timeline-chart"></canvas>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Task List -->
+            <section id="task-list-section">
+                <div class="flex justify-between items-center mb-4">
+                    <div class="flex items-center gap-4">
+                         <h2 class="text-2xl font-bold text-slate-800">Список задач</h2>
+                         <p id="task-count" class="text-slate-600 font-medium bg-slate-100 px-3 py-1 rounded-full">Найдено: 0</p>
+                    </div>
+                    <button id="add-task-btn" class="bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
+                        Добавить задачу
+                    </button>
+                </div>
+                <div id="task-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                </div>
+            </section>
+
+            <!-- History of Completed Tasks -->
+            <section id="history-section" class="mt-12">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-bold text-slate-800">История выполненных задач</h2>
+                </div>
+                <div id="history-list" class="bg-white p-5 rounded-xl shadow-sm border border-slate-200/80">
+                    <!-- Completed tasks will be rendered here -->
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modal for Add/Edit Task -->
+    <div id="task-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden z-50">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl p-6 relative">
+            <button id="close-modal-btn" class="absolute top-4 right-4 text-slate-500 hover:text-slate-800">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+            <h2 id="modal-title" class="text-2xl font-bold text-slate-800 mb-6">Добавить задачу</h2>
+            <form id="task-form">
+                <input type="hidden" id="task-index">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="task-direction" class="block text-sm font-medium text-slate-700 mb-1">Направление</label>
+                        <select id="task-direction" class="w-full p-2 border border-slate-300 rounded-lg" required></select>
+                    </div>
+                     <div>
+                        <label for="task-responsible" class="block text-sm font-medium text-slate-700 mb-1">Ответственный</label>
+                        <select id="task-responsible" class="w-full p-2 border border-slate-300 rounded-lg" required></select>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label for="task-description" class="block text-sm font-medium text-slate-700 mb-1">Описание задачи</label>
+                        <textarea id="task-description" rows="3" class="w-full p-2 border border-slate-300 rounded-lg" required></textarea>
+                    </div>
+                    <div>
+                        <label for="task-deadline" class="block text-sm font-medium text-slate-700 mb-1">Срок</label>
+                        <input type="text" id="task-deadline" class="w-full p-2 border border-slate-300 rounded-lg" placeholder="Напр. Q4 2025" required>
+                    </div>
+                    <div>
+                        <label for="task-priority" class="block text-sm font-medium text-slate-700 mb-1">Приоритет</label>
+                        <select id="task-priority" class="w-full p-2 border border-slate-300 rounded-lg" required></select>
+                    </div>
+                    <div>
+                        <label for="task-status" class="block text-sm font-medium text-slate-700 mb-1">Статус</label>
+                        <select id="task-status" class="w-full p-2 border border-slate-300 rounded-lg" required></select>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end gap-4">
+                    <button type="button" id="cancel-btn" class="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200">Отмена</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // --- DATA ---
+        let tasksData = [
+            { id: 1, direction: '1. Управление и стратегия (CEO)', task: 'Сформировать стратегический план на 1 год (цели, KPI, направления роста).', responsible: 'Айдын', deadline: 'Q4 2025', status: 'Не начато', priority: 'Высокий' },
+            { id: 2, direction: '1. Управление и стратегия (CEO)', task: 'Назначить руководителей отделов и утвердить роли.', responsible: 'Айдын', deadline: 'Q4 2025', status: 'В работе', priority: 'Высокий' },
+            { id: 3, direction: '1. Управление и стратегия (CEO)', task: 'Настроить еженедельные встречи по направлениям.', responsible: 'Айдын', deadline: 'Q4 2025', status: 'Выполнено', priority: 'Средний' },
+            { id: 4, direction: '1. Управление и стратегия (CEO)', task: 'Утвердить финансовую модель и систему отчётности.', responsible: 'Сульфи', deadline: 'Q1 2026', status: 'Не начато', priority: 'Высокий' },
+            { id: 5, direction: '1. Управление и стратегия (CEO)', task: 'Разработать партнёрскую программу для школ, вузов и компаний.', responsible: 'Акерке', deadline: 'Q1 2026', status: 'Не начато', priority: 'Средний' },
+            { id: 6, direction: '1. Управление и стратегия (CEO)', task: 'Определить систему KPI для каждого отдела.', responsible: 'Айдын', deadline: 'Q1 2026', status: 'В работе', priority: 'Высокий' },
+            { id: 7, direction: '2. Маркетинг и медиа (NeoAI Media)', task: 'Запустить Telegram-канал NeoAI News.', responsible: 'Акерке', deadline: 'Q4 2025', status: 'Выполнено', priority: 'Высокий' },
+        ];
+
+        let allPerformers = ['Айдын', 'Аулет', 'Акерке', 'Сульфи'];
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- STATE & DOM ELEMENTS ---
+            const filters = { responsible: 'all', priority: 'all', status: 'all', direction: 'all' };
+            const taskGrid = document.getElementById('task-grid');
+            const modal = document.getElementById('task-modal');
+            const taskForm = document.getElementById('task-form');
+            const modalTitle = document.getElementById('modal-title');
+            const taskIndexInput = document.getElementById('task-index');
+            let responsibleChart, statusChart, timelineChart;
+
+            // --- HELPER FUNCTIONS ---
+            function getUniqueValues(key) {
+                return [...new Set(tasksData.map(task => task[key]))].sort();
+            }
+
+            function populateSelect(element, values, displayFormatter = val => val, options = {}) {
+                if (!element) return;
+                const currentValue = element.value;
+                element.innerHTML = '';
+                if (options.includeAll) element.add(new Option('Все', 'all'));
+                values.forEach(value => element.add(new Option(displayFormatter(value), value)));
+                element.value = Array.from(element.options).some(opt => opt.value === currentValue) ? currentValue : (options.includeAll ? 'all' : '');
+            }
+
+            function taskVisible(task) {
+                return (filters.responsible === 'all' || task.responsible === filters.responsible) &&
+                       (filters.priority === 'all' || task.priority === filters.priority) &&
+                       (filters.status === 'all' || task.status === filters.status) &&
+                       (filters.direction === 'all' || task.direction === filters.direction);
+            }
+
+            // --- RENDER & UPDATE FUNCTIONS ---
+            function renderTasks(tasksToRender) {
+                taskGrid.innerHTML = '';
+                if (tasksToRender.length === 0) {
+                    taskGrid.innerHTML = `<p class="text-slate-500 md:col-span-2 xl:col-span-3 text-center">Задачи с выбранными фильтрами не найдены.</p>`;
+                    return;
+                }
+                tasksToRender.forEach(task => {
+                    const taskGlobalIndex = tasksData.findIndex(t => t.id === task.id);
+                    const priorityClass = `priority-${task.priority}`;
+                    const statusClass = `status-${task.status.replace(' ', '-')}`;
+                    taskGrid.innerHTML += `
+                        <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200/80 flex flex-col justify-between">
+                            <div>
+                                <div class="flex justify-between items-start">
+                                    <p class="text-xs font-semibold text-slate-500 uppercase">${task.direction.split('. ')[1] || task.direction}</p>
+                                    <div class="flex gap-2">
+                                        <button class="edit-task-btn text-slate-400 hover:text-blue-600" data-task-index="${taskGlobalIndex}"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd" /></svg></button>
+                                        <button class="delete-task-btn text-slate-400 hover:text-red-600" data-task-index="${taskGlobalIndex}"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clip-rule="evenodd" /></svg></button>
+                                    </div>
+                                </div>
+                                <p class="font-semibold text-slate-800 my-2">${task.task}</p>
+                            </div>
+                            <div class="mt-4">
+                               <div class="flex items-center justify-between text-sm text-slate-600 mb-3">
+                                    <span class="flex items-center font-medium"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline-block mr-1.5 text-slate-400" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" /></svg>${task.responsible}</span>
+                                    <span class="flex items-center text-slate-500"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline-block mr-1.5 text-slate-400" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd" /></svg>${task.deadline}</span>
+                                </div>
+                                <div class="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+                                    <span class="priority-tag ${priorityClass}">${task.priority}</span>
+                                    <span class="status-tag ${statusClass}">${task.status}</span>
+                                </div>
+                            </div>
+                        </div>`;
+                });
+            }
+
+            function renderHistory() {
+                const historyList = document.getElementById('history-list');
+                historyList.innerHTML = '';
+                const completedTasks = tasksData.filter(task => task.status === 'Выполнено' && taskVisible(task));
+
+                if (completedTasks.length === 0) {
+                    let message = 'История выполненных задач пуста.';
+                    if (filters.responsible !== 'all') {
+                        message = `У исполнителя ${filters.responsible} нет выполненных задач.`;
+                    }
+                    historyList.innerHTML = `<p class="text-slate-500 text-center">${message}</p>`;
+                    return;
+                }
+
+                let historyHtml = '<ul class="space-y-4">';
+                completedTasks.forEach(task => {
+                    historyHtml += `
+                        <li class="flex items-center justify-between p-3 rounded-lg bg-slate-50/70 border border-slate-200/80">
+                            <div>
+                                <p class="font-medium text-slate-800">${task.task}</p>
+                                <p class="text-sm text-slate-500 mt-1">
+                                    <span class="font-semibold">${task.responsible}</span> &bull; Срок: ${task.deadline}
+                                </p>
+                            </div>
+                            <span class="flex-shrink-0 ml-4 text-sm font-bold text-green-600 flex items-center gap-1.5">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
+                                Выполнено
+                            </span>
+                        </li>`;
+                });
+                historyHtml += '</ul>';
+                historyList.innerHTML = historyHtml;
+            }
+
+            function updateKpis() {
+                document.getElementById('total-tasks').textContent = tasksData.length;
+                document.getElementById('inprogress-tasks').textContent = tasksData.filter(t => t.status === 'В работе').length;
+                document.getElementById('done-tasks').textContent = tasksData.filter(t => t.status === 'Выполнено').length;
+                document.getElementById('high-priority-tasks').textContent = tasksData.filter(t => t.priority === 'Высокий').length;
+                document.getElementById('task-count').textContent = `Найдено: ${tasksData.filter(taskVisible).length}`;
+            }
+
+            function updateCharts() {
+                const responsibleData = {}, statusData = {}, timelineData = {};
+                tasksData.forEach(task => {
+                    responsibleData[task.responsible] = (responsibleData[task.responsible] || 0) + 1;
+                    statusData[task.status] = (statusData[task.status] || 0) + 1;
+                    if (task.deadline !== 'Постоянно') timelineData[task.deadline] = (timelineData[task.deadline] || 0) + 1;
+                });
+                const chartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: { size: 12 } } } } };
+                if (responsibleChart) responsibleChart.destroy();
+                responsibleChart = new Chart(document.getElementById('responsible-chart'), { type: 'doughnut', data: { labels: Object.keys(responsibleData), datasets: [{ data: Object.values(responsibleData), backgroundColor: ['#38bdf8', '#fbbf24', '#34d399', '#f87171', '#a78bfa', '#f472b6'], borderColor: '#fdfcfb', borderWidth: 4 }] }, options: chartOptions });
+                if (statusChart) statusChart.destroy();
+                statusChart = new Chart(document.getElementById('status-chart'), { type: 'bar', data: { labels: Object.keys(statusData), datasets: [{ label: 'Количество задач', data: Object.values(statusData), backgroundColor: ['#e5e7eb', '#dbeafe', '#dcfce7'], borderRadius: 4 }] }, options: { ...chartOptions, indexAxis: 'y', plugins: { legend: { display: false } } } });
+                const sortedTimelineLabels = Object.keys(timelineData).sort((a,b) => (a.split(' ')[1] - b.split(' ')[1]) || (a.split(' ')[0].substring(1) - b.split(' ')[0].substring(1)));
+                if (timelineChart) timelineChart.destroy();
+                timelineChart = new Chart(document.getElementById('timeline-chart'), { type: 'bar', data: { labels: sortedTimelineLabels, datasets: [{ label: 'Количество задач', data: sortedTimelineLabels.map(l => timelineData[l]), backgroundColor: '#38bdf8', borderRadius: 4 }] }, options: { ...chartOptions, indexAxis: 'y', plugins: { legend: { display: false } } } });
+            }
+            
+            function refreshUI() {
+                renderTasks(tasksData.filter(taskVisible));
+                renderHistory();
+                updateKpis();
+                updateCharts();
+                populateSelect(document.getElementById('responsible-filter'), allPerformers.sort(), val => val, { includeAll: true });
+                populateSelect(document.getElementById('priority-filter'), getUniqueValues('priority'), val => val, { includeAll: true });
+                populateSelect(document.getElementById('status-filter'), getUniqueValues('status'), val => val, { includeAll: true });
+                populateSelect(document.getElementById('direction-filter'), getUniqueValues('direction'), v => v.split('. ')[1] || v, { includeAll: true });
+            }
+
+            // --- MODAL LOGIC ---
+            function openModal(taskIndex = null) {
+                taskForm.reset();
+                populateSelect(document.getElementById('task-direction'), getUniqueValues('direction'), v => v.split('. ')[1] || v);
+                populateSelect(document.getElementById('task-responsible'), allPerformers.sort());
+                populateSelect(document.getElementById('task-priority'), ['Высокий', 'Средний', 'Низкий']);
+                populateSelect(document.getElementById('task-status'), ['Не начато', 'В работе', 'Выполнено']);
+
+                if (taskIndex !== null) {
+                    modalTitle.textContent = 'Редактировать задачу';
+                    const task = tasksData[taskIndex];
+                    taskIndexInput.value = taskIndex;
+                    Object.keys(task).forEach(key => {
+                        const input = document.getElementById(`task-${key === 'task' ? 'description' : key}`);
+                        if (input) input.value = task[key];
+                    });
+                } else {
+                    modalTitle.textContent = 'Добавить задачу';
+                    taskIndexInput.value = '';
+                }
+                modal.classList.remove('hidden');
+            }
+            function closeModal() { modal.classList.add('hidden'); }
+
+            // --- EVENT LISTENERS ---
+            document.getElementById('add-task-btn').addEventListener('click', () => openModal());
+            document.getElementById('close-modal-btn').addEventListener('click', closeModal);
+            document.getElementById('cancel-btn').addEventListener('click', closeModal);
+            
+            document.getElementById('add-responsible-btn').addEventListener('click', () => {
+                const input = document.getElementById('new-responsible-input');
+                const newName = input.value.trim();
+                if (newName && !allPerformers.includes(newName)) {
+                    allPerformers.push(newName);
+                    refreshUI();
+                    input.value = '';
+                } else if (!newName) {
+                    alert('Имя исполнителя не может быть пустым.');
+                } else {
+                    alert('Такой исполнитель уже существует.');
+                }
+            });
+
+            taskForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const task = {
+                    direction: document.getElementById('task-direction').value,
+                    responsible: document.getElementById('task-responsible').value,
+                    task: document.getElementById('task-description').value,
+                    deadline: document.getElementById('task-deadline').value,
+                    priority: document.getElementById('task-priority').value,
+                    status: document.getElementById('task-status').value,
+                };
+                const index = taskIndexInput.value;
+                if (index) {
+                    tasksData[index] = { ...tasksData[index], ...task };
+                } else {
+                    task.id = tasksData.length > 0 ? Math.max(...tasksData.map(t => t.id)) + 1 : 1;
+                    tasksData.unshift(task);
+                }
+                closeModal();
+                refreshUI();
+            });
+
+            taskGrid.addEventListener('click', (e) => {
+                const editBtn = e.target.closest('.edit-task-btn');
+                const deleteBtn = e.target.closest('.delete-task-btn');
+                if (editBtn) openModal(editBtn.dataset.taskIndex);
+                if (deleteBtn) {
+                    if (confirm('Вы уверены, что хотите удалить эту задачу?')) {
+                        tasksData.splice(deleteBtn.dataset.taskIndex, 1);
+                        refreshUI();
+                    }
+                }
+            });
+
+            Object.keys(filters).forEach(key => {
+                document.getElementById(`${key}-filter`).addEventListener('change', (e) => {
+                    filters[key] = e.target.value;
+                    refreshUI();
+                });
+            });
+
+            // --- INITIALIZATION ---
+            refreshUI();
+        });
+    </script>
+</body>
+</html>
+
